@@ -1,0 +1,56 @@
+# install needed plugins
+required_plugins = %w(vagrant-share vagrant-vbguest)
+plugins_to_install = required_plugins.select { |plugin| not Vagrant.has_plugin? plugin }
+
+if not plugins_to_install.empty?
+  puts "Installing plugins: #{plugins_to_install.join(' ')}"
+  if system "vagrant plugin install #{plugins_to_install.join(' ')}"
+    exec "vagrant #{ARGV.join(' ')}"
+  else
+    abort "Installation of one or more plugins has failed. Aborting."
+  end
+end
+
+VAGRANT_HOME="/home/vagrant/"
+
+Vagrant.configure("2") do |config|
+
+  config.vm.box = "debian/stretch64"
+  
+  config.vm.define "test" do |test|
+  end
+
+  config.vm.provision "copy ssh configuration", type: "file", source: "~/.ssh", destination: "/home/vagrant/.ssh"
+  
+  config.vm.provision "prepare ssh configuration", type: "shell", inline: <<-SHELL 
+	chmod 755 /home/vagrant/.ssh
+	chmod 600 /home/vagrant/.ssh/*
+  SHELL
+    
+  config.vm.provision "prepare environment", type: "shell", inline: <<-SHELL
+    sudo apt-get --quiet update
+    sudo apt-get --assume-yes upgrade
+    sudo apt-get --assume-yes install git >/dev/null 2>&1 
+	sudo apt-get autoremove -y
+	adduser vagrant sudo >/dev/null 2>&1
+    sudo sed --in-place s/us/fr/g /etc/default/keyboard
+    systemctl reboot
+  SHELL
+  
+  config.vm.provision "prepare apache2", type: "shell", inline: <<-SHELL
+    sudo apt-get --assume-yes install apache2 >/dev/null 2>&1 
+	# ajout de la conf à partir du template dans /etc/apache2/site-available
+	# ajout de l'autorisation de lecture dans la configuration <Directory /srv/httpd>Require all granted</Directory>
+	# ajout du site avec sudo a2ensite <nouveau site>
+	# ajout de l'écoute du nouveau port dans /etc/apache2/ports.conf
+	# redémarrage du service apache2 pour prise en compte de la nouvelle configuration
+  SHELL
+  
+  config.vm.network "forwarded_port", guest: 8080, host: 8888  
+  
+  # Declare provider
+  config.vm.provider 'virtualbox' do |vb|
+	vb.memory = '2048'
+    vb.cpus = '2'
+  end
+end
